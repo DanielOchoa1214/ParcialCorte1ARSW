@@ -17,6 +17,7 @@ import java.util.logging.Logger;
  */
 public class HostBlackListsValidator{
     private static final int BLACK_LIST_ALARM_COUNT=5;
+    private HostBlacklistsDataSourceFacade skds=HostBlacklistsDataSourceFacade.getInstance();
 
     private static final Logger LOG = Logger.getLogger(HostBlackListsValidator.class.getName());
 
@@ -34,8 +35,16 @@ public class HostBlackListsValidator{
 
     public List<Integer> checkHost(String ipaddress, int N) throws InterruptedException {
         BlackListThread[] blackThreads = new BlackListThread[N];
-        HostBlacklistsDataSourceFacade skds=HostBlacklistsDataSourceFacade.getInstance();
         List<Integer> blackListOcurrences = new LinkedList<>();
+        createAndStartThreads(N, ipaddress, blackThreads);
+        waitForOthers(blackThreads, N);
+        report(ipaddress);
+        joinOccurrences(blackListOcurrences, blackThreads, N);
+        LOG.log(Level.INFO, "Checked Black Lists:{0} of {1}", new Object[]{BlackListThread.checkedListsCount.get(), skds.getRegisteredServersCount()});
+        return blackListOcurrences;
+    }
+
+    private void createAndStartThreads(int N, String ipaddress, BlackListThread[] blackThreads){
         for(int i = 0; i < N; i++){
             int lowerRange = skds.getRegisteredServersCount() / N * i;
             int topRange = skds.getRegisteredServersCount() / N * (i + 1);
@@ -46,20 +55,27 @@ public class HostBlackListsValidator{
             blackThread.start();
             blackThreads[i] = blackThread;
         }
-        for(int i = 0; i < N; i++){
-            blackThreads[i].join();
-        }
+    }
+
+    private void report(String ipaddress){
         if (BlackListThread.ocurrencesCount.get() >= BLACK_LIST_ALARM_COUNT){
             skds.reportAsNotTrustworthy(ipaddress);
         }
         else{
             skds.reportAsTrustworthy(ipaddress);
         }
+    }
+
+    private void waitForOthers(BlackListThread[] blackThreads, int N) throws InterruptedException {
+        for(int i = 0; i < N; i++){
+            blackThreads[i].join();
+        }
+    }
+
+    private void joinOccurrences(List<Integer> blackListOcurrences, BlackListThread[] blackThreads, int N){
         for(int i = 0; i < N; i++){
             blackListOcurrences.addAll(blackThreads[i].getBlackListOcurrences());
         }
-        LOG.log(Level.INFO, "Checked Black Lists:{0} of {1}", new Object[]{BlackListThread.checkedListsCount.get(), skds.getRegisteredServersCount()});
-        return blackListOcurrences;
     }
 
 }
